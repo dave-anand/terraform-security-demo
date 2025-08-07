@@ -1,0 +1,61 @@
+# GitHub Action for Trivy Security Scanning
+name: 'Trivy Security Scan'
+
+on:
+  pull_request:
+    branches: ['main', 'develop']
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+
+jobs:
+  trivy-scan:
+    runs-on: ubuntu-latest
+    name: 'Trivy Infrastructure Scan'
+
+    steps:
+      - name: 'Checkout repository'
+        uses: actions/checkout@v4
+
+      - name: 'Run Trivy vulnerability scanner in repo mode'
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: 'terraform/'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '1'
+
+      - name: 'Upload Trivy scan results to GitHub Security tab'
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: 'Run Trivy scanner for human readable output'
+        uses: aquasecurity/trivy-action@master
+        if: always()
+        with:
+          scan-type: 'config'
+          scan-ref: 'terraform/'
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+
+      - name: 'Comment PR with scan results'
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🚨 **Security vulnerabilities detected!**\n\nTrivy has found HIGH or CRITICAL security issues in your Terraform configuration. Please review the Security tab for detailed results and fix the issues before merging.\n\n⚠️ **This PR cannot be merged until security issues are resolved.**'
+            });
